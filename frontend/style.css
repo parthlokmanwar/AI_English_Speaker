@@ -29,7 +29,7 @@
   --border:          #2a2a4a;
   --border-light:    #3a3a5a;
   --header-height:   64px;
-  --input-height:    100px;
+  --input-height:    120px;
   --sidebar-width:   320px;
   --radius-sm:       8px;
   --radius-md:       14px;
@@ -550,14 +550,14 @@ ul { list-style: none; }
   bottom: 0;
   left: 0;
   right: var(--sidebar-width);
-  height: var(--input-height);
+  min-height: var(--input-height);
   background: rgba(15, 15, 26, 0.95);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 1.25rem;
+  padding: 1rem 1.25rem;
   z-index: 50;
 }
 

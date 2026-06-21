@@ -391,22 +391,49 @@ function setupSpeechRecognition() {
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SpeechRecognition();
-  recognition.continuous      = false;
-  recognition.interimResults  = true;
+  recognition.continuous      = true;   // Don't stop on short pauses
+  recognition.interimResults  = true;   // Show live transcript in input field
   recognition.lang            = "en-IN";
+  recognition.maxAlternatives = 1;
+
+  let finalTranscript = "";   // Accumulates confirmed words
+  let sendTimer       = null; // Delay before auto-sending
 
   recognition.onresult = (event) => {
-    const transcript = Array.from(event.results)
-      .map(r => r[0].transcript)
-      .join("");
-    messageInput.value = transcript;
+    let interimTranscript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (result.isFinal) {
+        finalTranscript += result[0].transcript + " ";
+      } else {
+        interimTranscript += result[0].transcript;
+      }
+    }
+
+    // Show combined transcript live in the input
+    messageInput.value = (finalTranscript + interimTranscript).trim();
+
+    // Reset send timer — wait 600ms of silence after last speech before sending
+    clearTimeout(sendTimer);
+    if (finalTranscript.trim()) {
+      sendTimer = setTimeout(() => {
+        recognition.stop(); // Will trigger onend which fires sendMessage
+      }, 600);
+    }
   };
 
   recognition.onend = () => {
     isRecording = false;
     micBtn.classList.remove("recording");
     micBtn.setAttribute("aria-label", "Start voice recording");
-    if (messageInput.value.trim()) {
+    clearTimeout(sendTimer);
+
+    const captured = finalTranscript.trim() || messageInput.value.trim();
+    finalTranscript = ""; // Reset for next recording
+
+    if (captured) {
+      messageInput.value = captured;
       sendMessage();
     }
   };
@@ -414,14 +441,21 @@ function setupSpeechRecognition() {
   recognition.onerror = (event) => {
     isRecording = false;
     micBtn.classList.remove("recording");
+    finalTranscript = "";
+    clearTimeout(sendTimer);
     if (event.error === "not-allowed") {
       showToast("Microphone access denied. Please allow mic access in browser settings.", "red");
     } else if (event.error === "no-speech") {
-      showToast("No speech detected. Try again.", "yellow");
+      showToast("No speech detected. Tap the mic and try again.", "yellow");
+    } else if (event.error === "aborted") {
+      // User manually stopped — no toast needed
     } else {
       console.error("Speech recognition error:", event.error);
     }
   };
+
+  // Store reset function for mic button to call
+  recognition._resetTranscript = () => { finalTranscript = ""; clearTimeout(sendTimer); };
 }
 
 // Mic button click
@@ -434,11 +468,15 @@ micBtn.addEventListener("click", () => {
   }
 
   if (!isRecording) {
+    // Start fresh recording
+    messageInput.value = "";
+    if (recognition._resetTranscript) recognition._resetTranscript();
     recognition.start();
     isRecording = true;
     micBtn.classList.add("recording");
     micBtn.setAttribute("aria-label", "Stop voice recording");
   } else {
+    // User manually stopped — onend will fire and handle sending
     recognition.stop();
     isRecording = false;
     micBtn.classList.remove("recording");

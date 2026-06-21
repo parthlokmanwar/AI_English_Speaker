@@ -35,6 +35,8 @@ Each turn: (1) reply naturally based on mode, ask follow-ups, steer toward place
 
 Modes: casual=daily chat | hr=interview prep (strengths, situational Qs) | technical=projects/tech stack/problem-solving | gd=discussion topics, play devil's advocate.
 
+IMPORTANT: Keep your "reply" concise — 1-3 sentences max, under 45 words. You are speaking out loud, so be natural and brief. Never write long paragraphs.
+
 Return ONLY this JSON, no markdown, no extra text:
 {"reply": "...", "feedback": {"grammar_errors": ["wrong → correct: why"], "better_words": ["used → better: why"], "filler_words": [...], "fluency_tip": "...", "score": 1-10}}
 
@@ -179,7 +181,12 @@ def get_time_of_day() -> str:
 
 # ─── Helper: TTS in Memory ───────────────────────────────────────────────────
 async def generate_tts(text: str) -> bytes:
-    communicate = edge_tts.Communicate(text, "en-IN-NeerjaNeural")
+    communicate = edge_tts.Communicate(
+        text,
+        voice="en-IN-NeerjaNeural",
+        rate="+20%",   # 20% faster speech — feels snappier, still natural
+        pitch="-5Hz",  # Slightly deeper pitch — warmer, less robotic
+    )
     audio_buffer = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":

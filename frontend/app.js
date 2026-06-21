@@ -232,7 +232,64 @@ function escapeHTML(str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TTS PLAYBACK
+//  AUDIO QUEUE FOR WEBSOCKET STREAMING
+// ─────────────────────────────────────────────────────────────────────────────
+class AudioQueue {
+  constructor() {
+    this.queue = [];
+    this.isPlaying = false;
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    this.sourceNodes = [];
+  }
+
+  async addChunk(arrayBuffer) {
+    try {
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      this.queue.push(audioBuffer);
+      if (!this.isPlaying) {
+        this.playNext();
+      }
+    } catch (e) {
+      console.error("Audio decode error:", e);
+    }
+  }
+
+  playNext() {
+    if (this.queue.length === 0) {
+      this.isPlaying = false;
+      micBtn.disabled = false;
+      isMayaSpeaking = false;
+      return;
+    }
+    
+    this.isPlaying = true;
+    const buffer = this.queue.shift();
+    const source = this.audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.audioContext.destination);
+    
+    source.onended = () => {
+      this.playNext();
+    };
+    
+    this.sourceNodes.push(source);
+    source.start(0);
+  }
+
+  stopAll() {
+    this.queue = [];
+    this.sourceNodes.forEach(source => {
+      try { source.stop(); } catch(e) {}
+    });
+    this.sourceNodes = [];
+    this.isPlaying = false;
+  }
+}
+
+const audioQueue = new AudioQueue();
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TTS PLAYBACK (For Greeting Fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 async function playTTS(text) {
   isMayaSpeaking = true;
@@ -305,7 +362,7 @@ async function startSession(mode) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SEND MESSAGE
+//  SEND MESSAGE (WEBSOCKETS)
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendMessage() {
   const text = messageInput.value.trim();
@@ -319,69 +376,89 @@ async function sendMessage() {
   showTypingIndicator();
   setControlsEnabled(false);
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        history: conversationHistory.slice(0, -1), // history before current message
-        mode: currentMode,
-        turn_count: turnCount,
-      }),
-    });
+  audioQueue.stopAll();
+  isMayaSpeaking = true;
 
-    // Increment turn count after each send
-    turnCount++;
-
-    hideTypingIndicator();
-
-    if (res.status === 429) {
-      showToast("AI service is busy right now. Please wait a moment and try again.", "yellow");
-      setControlsEnabled(true);
-      return;
-    }
-
-    if (!res.ok) {
-      showToast("Something went wrong on the server. Try again.", "red");
-      setControlsEnabled(true);
-      return;
-    }
-
-    const data = await res.json();
-    const reply    = data.reply    || "Sorry, I didn't catch that. Could you try again?";
-    const feedback = data.feedback || {};
-
-    addBubble(reply, "maya");
-    conversationHistory.push({ role: "assistant", content: reply });
-    totalMessages++;
-
-    updateFeedbackPanels(feedback);
-
-    if (feedback.score && feedback.score > 0) {
-      sessionScores.push(feedback.score);
-    }
-    if (Array.isArray(feedback.better_words)) {
-      sessionVocabSuggestions.push(...feedback.better_words);
-    }
-    if (Array.isArray(feedback.grammar_errors)) {
-      sessionGrammarErrors.push(...feedback.grammar_errors);
-    }
-
-    await playTTS(reply);
-    setControlsEnabled(true);
-
-  } catch (err) {
-    hideTypingIndicator();
-    turnCount++; // still increment even on error
-    if (err.name === "TypeError" && err.message.includes("fetch")) {
-      showToast("Cannot connect to server. Is the backend running?", "red");
-    } else {
-      showToast("Something went wrong on the server. Try again.", "red");
-      console.error("Chat error:", err);
-    }
-    setControlsEnabled(true);
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  // Use current host if API_BASE_URL is relative, or replace protocol if absolute
+  let wsUrl = "";
+  if (API_BASE_URL.startsWith("http")) {
+    wsUrl = API_BASE_URL.replace(/^http/, "ws") + "/ws/chat";
+  } else {
+    wsUrl = `${wsProtocol}//${window.location.host}${API_BASE_URL}/ws/chat`;
   }
+  
+  // Hardcoded for local dev if needed
+  if (API_BASE_URL === "http://localhost:8000") wsUrl = "ws://localhost:8000/ws/chat";
+
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+
+  let mayaBubble = null;
+  let replyText = "";
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      message: text,
+      history: conversationHistory.slice(0, -1),
+      mode: currentMode,
+      turn_count: turnCount,
+    }));
+  };
+
+  ws.onmessage = async (event) => {
+    if (typeof event.data === "string") {
+      const payload = JSON.parse(event.data);
+      
+      if (payload.type === "text") {
+        hideTypingIndicator();
+        if (!mayaBubble) {
+           mayaBubble = addBubble("", "maya");
+        }
+        replyText += payload.content;
+        mayaBubble.querySelector(".bubble-text").textContent = replyText;
+        
+      } else if (payload.type === "feedback") {
+        const feedback = payload.data || {};
+        updateFeedbackPanels(feedback);
+        
+        if (feedback.score && feedback.score > 0) sessionScores.push(feedback.score);
+        if (Array.isArray(feedback.better_words)) sessionVocabSuggestions.push(...feedback.better_words);
+        if (Array.isArray(feedback.grammar_errors)) sessionGrammarErrors.push(...feedback.grammar_errors);
+
+      } else if (payload.type === "done") {
+        conversationHistory.push({ role: "assistant", content: replyText });
+        totalMessages++;
+        turnCount++;
+        ws.close();
+        
+      } else if (payload.type === "error") {
+        hideTypingIndicator();
+        showToast(payload.message || "AI service error", "red");
+        setControlsEnabled(true);
+        ws.close();
+      }
+    } else {
+      // Binary audio chunk
+      await audioQueue.addChunk(event.data);
+    }
+  };
+
+  ws.onerror = () => {
+    hideTypingIndicator();
+    turnCount++;
+    showToast("WebSocket connection failed.", "red");
+    setControlsEnabled(true);
+  };
+
+  ws.onclose = () => {
+    // If audio queue is empty, enable mic immediately.
+    // Otherwise, playNext() will enable it when finished.
+    if (!audioQueue.isPlaying) {
+      setControlsEnabled(true);
+      isMayaSpeaking = false;
+    }
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

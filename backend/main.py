@@ -2,12 +2,14 @@ import os
 import io
 import json
 import random
+import re
+import asyncio
 from datetime import datetime
 
 import httpx
 import edge_tts
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -36,10 +38,14 @@ Each turn: (1) reply naturally based on mode, ask follow-ups, steer toward place
 
 Modes: casual=daily chat | hr=interview prep (strengths, situational Qs) | technical=projects/tech stack/problem-solving | gd=discussion topics, play devil's advocate.
 
-IMPORTANT: Keep your "reply" concise — 1-3 sentences max, under 45 words. You are speaking out loud, so be natural and brief. Never write long paragraphs.
+IMPORTANT: Keep your reply concise — 1-3 sentences max, under 45 words. You are speaking out loud, so be natural and brief. Never write long paragraphs.
 
-Return ONLY this JSON, no markdown, no extra text:
-{"reply": "...", "feedback": {"grammar_errors": ["wrong → correct: why"], "better_words": ["used → better: why"], "filler_words": [...], "fluency_tip": "...", "score": 1-10}}
+You MUST format your output EXACTLY as follows:
+First, your natural spoken reply.
+Then, on a new line, exactly this delimiter:
+===FEEDBACK===
+Then, exactly this JSON object (no markdown fences):
+{"grammar_errors": ["wrong → correct: why"], "better_words": ["used → better: why"], "filler_words": [...], "fluency_tip": "...", "score": 1-10}
 
 Score: 10=perfect, 8-9=minor issues, 6-7=noticeable errors, 4-5=frequent errors, 1-3=hard to follow. Empty arrays if nothing to report, never null."""
 
@@ -363,6 +369,143 @@ async def analytics_dashboard():
         return analyzer.generate_dashboard_payload()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load analytics: {str(exc)}")
+
+# ─── WEBSOCKET /ws/chat ───────────────────────────────────────────────────────
+@app.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket):
+    await websocket.accept()
+    if not OPENROUTER_API_KEY:
+        await websocket.close(code=1011, reason="API key missing")
+        return
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            message = data.get("message", "")
+            history = data.get("history", [])
+            mode = data.get("mode", "casual")
+            turn_count = data.get("turn_count", 0)
+
+            # Build messages payload
+            trimmed_history = trim_history(history)
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+            # Inject interview question every 3rd turn in hr/technical/gd mode
+            if mode in ["hr", "technical", "gd"] and turn_count > 0 and turn_count % 3 == 0:
+                injected_q = get_random_question(mode)
+                if injected_q:
+                    messages.append({
+                        "role": "system",
+                        "content": f"For this turn, naturally transition the conversation to ask the student this exact question: \"{injected_q}\" — weave it in naturally, don't just bluntly ask it."
+                    })
+
+            messages.extend([{"role": msg["role"], "content": msg["content"]} for msg in trimmed_history])
+            messages.append({"role": "user", "content": message})
+
+            payload = {
+                "model": PRIMARY_MODEL,
+                "messages": messages,
+                "temperature": 0.8,
+                "max_tokens": 500,
+                "stream": True
+            }
+            headers = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://fluentround.app",
+                "X-Title": "FluentRound",
+            }
+
+            buffer = ""
+            current_sentence = ""
+            feedback_mode = False
+            feedback_json_str = ""
+            
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", OPENROUTER_URL, headers=headers, json=payload) as response:
+                    if response.status_code != 200:
+                        await websocket.send_json({"type": "error", "message": "AI service unavailable"})
+                        continue
+                        
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                            
+                        try:
+                            chunk = json.loads(data_str)
+                            token = chunk["choices"][0]["delta"].get("content", "")
+                        except:
+                            continue
+                            
+                        if not token:
+                            continue
+
+                        buffer += token
+                        
+                        if not feedback_mode:
+                            if "===FEEDBACK===" in buffer:
+                                feedback_mode = True
+                                parts = buffer.split("===FEEDBACK===")
+                                text_part = parts[0]
+                                feedback_json_str = parts[1] if len(parts) > 1 else ""
+                                
+                                # Send the remaining text before the delimiter
+                                remaining_text = text_part[len(current_sentence):]
+                                if remaining_text.strip():
+                                    await websocket.send_json({"type": "text", "content": remaining_text})
+                                    # TTS for final sentence
+                                    try:
+                                        communicate = edge_tts.Communicate(remaining_text.strip(), voice="en-IN-NeerjaNeural", rate="+20%", pitch="-5Hz")
+                                        async for audio_chunk in communicate.stream():
+                                            if audio_chunk["type"] == "audio":
+                                                await websocket.send_bytes(audio_chunk["data"])
+                                    except Exception as e:
+                                        print(f"TTS Error: {e}")
+                                continue
+
+                            # Standard streaming text
+                            await websocket.send_json({"type": "text", "content": token})
+                            
+                            # Check for sentence ending to stream TTS
+                            current_sentence += token
+                            if re.search(r'[.!?]\s+$', current_sentence) or re.search(r'[.!?]$', current_sentence) and len(current_sentence) > 30:
+                                sent_to_tts = current_sentence.strip()
+                                current_sentence = ""
+                                if sent_to_tts:
+                                    try:
+                                        communicate = edge_tts.Communicate(sent_to_tts, voice="en-IN-NeerjaNeural", rate="+20%", pitch="-5Hz")
+                                        async for audio_chunk in communicate.stream():
+                                            if audio_chunk["type"] == "audio":
+                                                await websocket.send_bytes(audio_chunk["data"])
+                                    except Exception as e:
+                                        print(f"TTS Error: {e}")
+                        else:
+                            # We are in feedback mode, accumulate json string
+                            feedback_json_str += token
+
+            # We finished streaming. Now parse feedback_json_str
+            if feedback_json_str:
+                try:
+                    cleaned = clean_llm_response(feedback_json_str)
+                    feedback_data = json.loads(cleaned)
+                    await websocket.send_json({"type": "feedback", "data": feedback_data})
+                except Exception as e:
+                    print(f"Failed to parse feedback: {e}\nRaw: {feedback_json_str}")
+                    await websocket.send_json({"type": "feedback", "data": FALLBACK_RESPONSE["feedback"]})
+            else:
+                await websocket.send_json({"type": "feedback", "data": FALLBACK_RESPONSE["feedback"]})
+            
+            # Send done signal
+            await websocket.send_json({"type": "done"})
+
+    except WebSocketDisconnect:
+        print("Client disconnected")
+    except Exception as e:
+        print(f"WebSocket Error: {e}")
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
 @app.get("/")

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FluentRound 🎙️ — AI English Practice Partner</title>
+  <meta name="description" content="FluentRound is an AI-powered English conversation practice app for Indian engineering students. Practice HR interviews, technical rounds, and group discussions with real-time language feedback." />
+  <meta name="keywords" content="English practice, placement preparation, HR interview, technical interview, group discussion, engineering students, AI conversation" />
+  <meta property="og:title" content="FluentRound — AI English Practice Partner" />
+  <meta property="og:description" content="Practice conversational English with Maya, your AI coach for campus placements and interviews." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════
+       MODE SELECTION SCREEN
+  ══════════════════════════════════════════════ -->
+  <section id="mode-screen" class="mode-screen" aria-label="Mode Selection">
+
+    <!-- Animated background orbs -->
+    <div class="bg-orb bg-orb--1" aria-hidden="true"></div>
+    <div class="bg-orb bg-orb--2" aria-hidden="true"></div>
+    <div class="bg-orb bg-orb--3" aria-hidden="true"></div>
+
+    <div class="mode-container">
+      <!-- Logo / Brand -->
+      <div class="brand" aria-label="FluentRound branding">
+        <div class="brand-icon" aria-hidden="true">🎙️</div>
+        <h1 class="brand-title">FluentRound</h1>
+        <p class="brand-subtitle">Your AI English Practice Partner</p>
+        <p class="brand-desc">
+          Practice natural English conversations with Maya — your personal AI coach.
+          Get real-time feedback on grammar, vocabulary, fluency, and filler words.
+        </p>
+      </div>
+
+      <!-- Mode Cards -->
+      <h2 class="mode-heading">Choose Your Practice Mode</h2>
+      <div class="mode-grid" role="list">
+
+        <button
+          id="mode-casual"
+          class="mode-card"
+          role="listitem"
+          data-mode="casual"
+          aria-label="Casual Chat mode — everyday conversation practice"
+        >
+          <div class="mode-card__icon" aria-hidden="true">🗣️</div>
+          <div class="mode-card__body">
+            <h3 class="mode-card__title">Casual Chat</h3>
+            <p class="mode-card__desc">Everyday conversation practice</p>
+          </div>
+          <div class="mode-card__tag" aria-hidden="true">Beginner Friendly</div>
+        </button>
+
+        <button
+          id="mode-hr"
+          class="mode-card"
+          role="listitem"
+          data-mode="hr"
+          aria-label="HR Interview mode — placement interview preparation"
+        >
+          <div class="mode-card__icon" aria-hidden="true">💼</div>
+          <div class="mode-card__body">
+            <h3 class="mode-card__title">HR Interview</h3>
+            <p class="mode-card__desc">Placement interview preparation</p>
+          </div>
+          <div class="mode-card__tag mode-card__tag--hr" aria-hidden="true">Placement Prep</div>
+        </button>
+
+        <button
+          id="mode-technical"
+          class="mode-card"
+          role="listitem"
+          data-mode="technical"
+          aria-label="Technical Interview mode — tech rounds and project discussions"
+        >
+          <div class="mode-card__icon" aria-hidden="true">💻</div>
+          <div class="mode-card__body">
+            <h3 class="mode-card__title">Technical Interview</h3>
+            <p class="mode-card__desc">Tech rounds and project discussions</p>
+          </div>
+          <div class="mode-card__tag mode-card__tag--tech" aria-hidden="true">Advanced</div>
+        </button>
+
+        <button
+          id="mode-gd"
+          class="mode-card"
+          role="listitem"
+          data-mode="gd"
+          aria-label="Group Discussion mode — GD topics and debate practice"
+        >
+          <div class="mode-card__icon" aria-hidden="true">🏛️</div>
+          <div class="mode-card__body">
+            <h3 class="mode-card__title">Group Discussion</h3>
+            <p class="mode-card__desc">GD topics and debate practice</p>
+          </div>
+          <div class="mode-card__tag mode-card__tag--gd" aria-hidden="true">Critical Thinking</div>
+        </button>
+
+      </div>
+
+      <p class="mode-footer">
+        Powered by <strong>Llama 3.3 70B</strong> via OpenRouter · Voice by <strong>Microsoft Neural TTS</strong>
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       CHAT SCREEN
+  ══════════════════════════════════════════════ -->
+  <section id="chat-screen" class="chat-screen hidden" aria-label="Chat Interface">
+
+    <!-- Header -->
+    <header class="chat-header" role="banner">
+      <div class="chat-header__left">
+        <span class="chat-header__logo" aria-hidden="true">🎙️</span>
+        <span class="chat-header__name">FluentRound</span>
+      </div>
+      <div class="chat-header__center">
+        <span id="mode-badge" class="mode-badge" aria-live="polite" aria-label="Current mode">Casual Chat</span>
+      </div>
+      <div class="chat-header__right">
+        <button id="end-session-btn" class="btn-end-session" aria-label="End current session and see summary">
+          End Session
+        </button>
+      </div>
+    </header>
+
+    <!-- Main layout: chat + sidebar -->
+    <div class="chat-layout">
+
+      <!-- Chat Area -->
+      <main id="chat-area" class="chat-area" role="main" aria-label="Conversation" aria-live="polite">
+        <!-- Messages injected by JS -->
+      </main>
+
+      <!-- Feedback Sidebar (desktop) -->
+      <aside id="feedback-sidebar" class="feedback-sidebar" aria-label="Language Feedback Panel">
+        <div class="feedback-sidebar__header">
+          <span aria-hidden="true">📊</span> Live Feedback
+        </div>
+        <div id="feedback-content" class="feedback-content">
+          <div class="feedback-placeholder">
+            <span aria-hidden="true">💬</span>
+            <p>Send a message to see feedback</p>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- Input Bar -->
+    <footer class="input-bar" role="contentinfo" aria-label="Message Input">
+      <div class="input-wrapper">
+        <div id="browser-warning" class="browser-warning hidden" role="alert" aria-live="assertive">
+          ⚠️ Your browser doesn't support voice input. Please use Chrome. Text input is still available.
+        </div>
+        <div class="input-row">
+          <input
+            id="message-input"
+            type="text"
+            class="message-input"
+            placeholder="Type here or use the mic..."
+            aria-label="Message input field"
+            autocomplete="off"
+            maxlength="500"
+          />
+          <button
+            id="mic-btn"
+            class="mic-btn"
+            aria-label="Start voice recording"
+            title="Click to speak"
+          >🎤</button>
+          <button
+            id="send-btn"
+            class="send-btn"
+            aria-label="Send message"
+            title="Send message"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Mobile Feedback FAB -->
+    <button id="feedback-fab" class="feedback-fab" aria-label="Toggle feedback panel" aria-expanded="false">
+      📊 Feedback
+    </button>
+
+    <!-- Mobile Feedback Drawer -->
+    <div id="feedback-drawer" class="feedback-drawer" aria-label="Feedback Drawer" aria-hidden="true">
+      <div class="feedback-drawer__handle" aria-hidden="true"></div>
+      <div class="feedback-drawer__header">
+        <span aria-hidden="true">📊</span> Live Feedback
+        <button id="close-drawer-btn" class="close-drawer-btn" aria-label="Close feedback drawer">✕</button>
+      </div>
+      <div id="feedback-drawer-content" class="feedback-content">
+        <div class="feedback-placeholder">
+          <span aria-hidden="true">💬</span>
+          <p>Send a message to see feedback</p>
+        </div>
+      </div>
+    </div>
+    <div id="drawer-overlay" class="drawer-overlay hidden" aria-hidden="true"></div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       SESSION SUMMARY MODAL
+  ══════════════════════════════════════════════ -->
+  <div id="summary-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="summary-title" aria-hidden="true">
+    <div class="modal" role="document">
+      <div class="modal__header">
+        <h2 id="summary-title" class="modal__title">Session Summary 📋</h2>
+      </div>
+      <div class="modal__body">
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div id="stat-messages" class="stat-card__value">0</div>
+            <div class="stat-card__label">Messages Exchanged</div>
+          </div>
+          <div class="stat-card">
+            <div id="stat-avg-score" class="stat-card__value">—</div>
+            <div class="stat-card__label">Avg Fluency Score</div>
+          </div>
+        </div>
+
+        <!-- Common Error -->
+        <div class="summary-section">
+          <h3 class="summary-section__title">🔴 Most Common Grammar Issue</h3>
+          <p id="stat-common-error" class="summary-section__content">—</p>
+        </div>
+
+        <!-- Top Vocab -->
+        <div class="summary-section">
+          <h3 class="summary-section__title">🔵 Top Vocabulary Suggestions</h3>
+          <ul id="stat-vocab-list" class="summary-vocab-list">
+            <li class="text-secondary">No suggestions yet.</li>
+          </ul>
+        </div>
+
+        <!-- Motivational Message -->
+        <div id="motivational-msg" class="motivational-msg" aria-live="polite">
+          Keep up the great work! 🌟
+        </div>
+
+      </div>
+      <div class="modal__footer">
+        <button id="close-modal-btn" class="btn-secondary" aria-label="Close session summary">Close</button>
+        <button id="new-session-btn" class="btn-primary" aria-label="Start a new session">Start New Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true" role="alert"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

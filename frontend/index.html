@@ -37,8 +37,15 @@
         </p>
       </div>
 
+      <!-- Action Row: Mode heading + Progress button -->
+      <div class="mode-heading-row">
+        <h2 class="mode-heading">Choose Your Practice Mode</h2>
+        <button id="progress-btn" class="btn-progress" aria-label="View my progress dashboard">
+          📈 My Progress
+        </button>
+      </div>
+
       <!-- Mode Cards -->
-      <h2 class="mode-heading">Choose Your Practice Mode</h2>
       <div class="mode-grid" role="list">
 
         <button
@@ -104,8 +111,84 @@
       </div>
 
       <p class="mode-footer">
-        Powered by <strong>Llama 3.3 70B</strong> via OpenRouter · Voice by <strong>Microsoft Neural TTS</strong>
+        Powered by <strong>DeepSeek Chat</strong> via OpenRouter · Voice by <strong>Microsoft Neural TTS</strong>
       </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════
+       PROGRESS SCREEN
+  ══════════════════════════════════════════════ -->
+  <section id="progress-screen" class="progress-screen hidden" aria-label="My Progress Dashboard">
+
+    <div class="bg-orb bg-orb--1" aria-hidden="true"></div>
+    <div class="bg-orb bg-orb--2" aria-hidden="true"></div>
+
+    <div class="progress-container">
+      <div class="progress-header">
+        <button id="progress-back-btn" class="btn-back" aria-label="Back to mode selection">
+          ← Back
+        </button>
+        <h2 class="progress-title">📈 My Progress</h2>
+      </div>
+
+      <!-- Loading / Error states -->
+      <div id="progress-loading" class="progress-state" aria-live="polite">
+        <div class="progress-spinner" aria-hidden="true"></div>
+        <p>Loading your progress...</p>
+      </div>
+      <div id="progress-empty" class="progress-state hidden">
+        <div class="progress-empty-icon" aria-hidden="true">🎯</div>
+        <p>No sessions yet!</p>
+        <p class="text-secondary">Complete your first session to start tracking progress.</p>
+      </div>
+
+      <!-- Progress Content -->
+      <div id="progress-content" class="hidden">
+
+        <!-- Stats Row -->
+        <div class="progress-stats-row">
+          <div class="progress-stat-card">
+            <div id="prog-total-sessions" class="progress-stat-value">0</div>
+            <div class="progress-stat-label">Sessions Completed</div>
+          </div>
+          <div class="progress-stat-card">
+            <div id="prog-latest-score" class="progress-stat-value">—</div>
+            <div class="progress-stat-label">Latest Avg Score</div>
+          </div>
+          <div class="progress-stat-card">
+            <div id="prog-best-score" class="progress-stat-value">—</div>
+            <div class="progress-stat-label">Best Score</div>
+          </div>
+        </div>
+
+        <!-- Improvement Note -->
+        <div id="prog-improvement-note" class="improvement-note" aria-live="polite"></div>
+
+        <!-- Score Chart -->
+        <div class="chart-section">
+          <h3 class="chart-title">Fluency Score Trend</h3>
+          <div class="chart-wrapper">
+            <canvas id="score-chart" width="600" height="220" aria-label="Fluency score line chart" role="img"></canvas>
+          </div>
+          <div class="chart-labels" aria-hidden="true">
+            <span>Oldest</span><span>Most Recent</span>
+          </div>
+        </div>
+
+        <!-- Common Issue -->
+        <div class="progress-issue-section">
+          <h3 class="progress-issue-title">🔴 Most Common Grammar Issue</h3>
+          <p id="prog-common-issue" class="progress-issue-value">—</p>
+        </div>
+
+        <!-- Recent Sessions List -->
+        <div class="progress-sessions-section">
+          <h3 class="progress-sessions-title">📋 Recent Sessions</h3>
+          <div id="prog-sessions-list" class="progress-sessions-list"></div>
+        </div>
+
+      </div>
     </div>
   </section>
 
@@ -252,6 +335,11 @@
         <!-- Motivational Message -->
         <div id="motivational-msg" class="motivational-msg" aria-live="polite">
           Keep up the great work! 🌟
+        </div>
+
+        <!-- Session Saved Note -->
+        <div id="session-saved-note" class="session-saved-note hidden" aria-live="polite">
+          ✅ Saved to your progress history
         </div>
 
       </div>

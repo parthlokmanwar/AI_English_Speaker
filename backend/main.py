@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import random
 from datetime import datetime
 
@@ -11,38 +12,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from questions import get_random_question
+from storage import save_session, load_sessions, compute_progress
+
 # ─── Load environment ───────────────────────────────────────────────────────
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# ── Model Fallback Chain ─────────────────────────────────────────────────────
-# Tries free models first, falls back to paid if all fail.
-# Configured via .env variables FREE_MODELS and PAID_FALLBACK_MODEL
-FREE_MODELS_ENV = os.getenv("FREE_MODELS", "meta-llama/llama-3.3-70b-instruct:free,qwen/qwen3-235b-a22b:free,deepseek/deepseek-chat-v3-0324:free")
-PAID_FALLBACK_MODEL = os.getenv("PAID_FALLBACK_MODEL", "openai/gpt-4o-mini")
+# ── Paid Model Configuration ─────────────────────────────────────────────────
+PRIMARY_MODEL  = "deepseek/deepseek-chat"
+FALLBACK_MODEL = "google/gemini-2.0-flash-001"
 
-MODEL_CHAIN = [m.strip() for m in FREE_MODELS_ENV.split(",") if m.strip()]
-if PAID_FALLBACK_MODEL:
-    MODEL_CHAIN.append(PAID_FALLBACK_MODEL.strip())
+# DeepSeek Chat pricing (per 1M tokens, as of June 2025)
+COST_INPUT_PER_TOKEN  = 0.27 / 1_000_000
+COST_OUTPUT_PER_TOKEN = 1.10 / 1_000_000
 
-# ─── System Prompt ──────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are Maya, a warm, encouraging English conversation coach for Indian engineering students preparing for campus placements and job interviews. You speak naturally and conversationally — never robotic, never preachy.
+# ─── System Prompt (tightened) ──────────────────────────────────────────────
+SYSTEM_PROMPT = """You are Maya, a warm English conversation coach for Indian engineering students prepping for placements.
 
-Your TWO jobs every turn:
-1. CONVERSE: Reply naturally to the student based on the selected mode. Keep it engaging, ask follow-up questions, react like a real person. In HR/technical mode, steer toward placement-relevant topics (projects, goals, strengths, technical concepts). In GD mode, present discussion topics and counter-arguments.
-2. ANALYZE: Silently analyze the student's message for language issues.
+Each turn: (1) reply naturally based on mode, ask follow-ups, steer toward placement topics in hr/technical mode. (2) silently analyze the student's grammar, word choice, fillers.
 
-Mode behavior:
-- casual: everyday conversation — how was your day, hobbies, college life, current events
-- hr: HR interview practice — tell me about yourself, strengths/weaknesses, why this company, situational questions, body language tips
-- technical: technical interview — explain your projects, tech stack questions, problem-solving approach, explain concepts simply
-- gd: group discussion — introduce topics relevant to engineering/India/tech, encourage structured arguments, play devil's advocate
+Modes: casual=daily chat | hr=interview prep (strengths, situational Qs) | technical=projects/tech stack/problem-solving | gd=discussion topics, play devil's advocate.
 
-CRITICAL: You MUST return ONLY a single valid JSON object. No text before it, no text after it, no markdown code fences, no explanation. Only this exact structure:
-{"reply": "your conversational reply here", "feedback": {"grammar_errors": ["list grammar mistakes as: wrong phrase → correct phrase: brief explanation"], "better_words": ["word they used → better alternative: why it sounds more professional"], "filler_words": ["every filler word or phrase detected"], "fluency_tip": "one short specific actionable tip based on THIS message", "score": 8}}
+Return ONLY this JSON, no markdown, no extra text:
+{"reply": "...", "feedback": {"grammar_errors": ["wrong → correct: why"], "better_words": ["used → better: why"], "filler_words": [...], "fluency_tip": "...", "score": 1-10}}
 
-Score rules: 1-10 integer only. 10 = perfect fluency, 8-9 = minor issues, 6-7 = noticeable errors but understandable, 4-5 = frequent errors, 1-3 = hard to understand. Be honest but kind. If grammar_errors/better_words/filler_words have nothing to report, return empty arrays []. Never return null."""
+Score: 10=perfect, 8-9=minor issues, 6-7=noticeable errors, 4-5=frequent errors, 1-3=hard to follow. Empty arrays if nothing to report, never null."""
 
 # ─── Greeting Templates ─────────────────────────────────────────────────────
 GREETINGS = {
@@ -145,12 +141,21 @@ class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
     mode: str = "casual"
+    turn_count: int = 0
 
 class TTSRequest(BaseModel):
     text: str
 
+class SessionSummaryRequest(BaseModel):
+    mode: str
+    total_messages: int
+    avg_score: float
+    common_grammar_issue: str
+    vocab_suggestions: list[str] = []
+    grammar_errors: list[str] = []
+
 # ─── FastAPI App ─────────────────────────────────────────────────────────────
-app = FastAPI(title="FluentRound API", version="1.0.0")
+app = FastAPI(title="FluentRound API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -185,20 +190,23 @@ async def generate_tts(text: str) -> bytes:
 # ─── Helper: Clean LLM Response ──────────────────────────────────────────────
 def clean_llm_response(text: str) -> str:
     text = text.strip()
-    # Remove markdown code fences
     for fence in ["```json", "```JSON", "```"]:
         text = text.replace(fence, "")
     text = text.strip()
-    # Strip any text before the first { and after the last }
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end >= start:
         text = text[start:end + 1]
     return text
 
+# ─── Helper: Trim History ────────────────────────────────────────────────────
+def trim_history(history: list, max_messages: int = 10) -> list:
+    """Keep only the last N messages to control token usage."""
+    return history[-max_messages:] if len(history) > max_messages else history
+
 # ─── Fallback Response ───────────────────────────────────────────────────────
 FALLBACK_RESPONSE = {
-    "reply": "Sorry, I had a small hiccup! Could you repeat that?",
+    "reply": "I'm having a small technical moment! Could you say that again?",
     "feedback": {
         "grammar_errors": [],
         "better_words": [],
@@ -208,18 +216,18 @@ FALLBACK_RESPONSE = {
     },
 }
 
-# ─── Helper: call one model, return raw text or raise ─────────────────────────
-async def call_model(model: str, messages: list, headers: dict) -> str:
+# ─── Helper: Call one model ───────────────────────────────────────────────────
+async def call_model(model: str, messages: list, headers: dict):
+    """Returns (raw_text, usage_dict) or raises on failure."""
     payload = {
         "model": model,
         "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 900,
+        "temperature": 0.8,
+        "max_tokens": 500,
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
 
-    # Surface rate limit vs other errors distinctly
     if response.status_code == 429:
         raise ValueError("rate_limit")
     if response.status_code in (502, 503, 504):
@@ -227,7 +235,9 @@ async def call_model(model: str, messages: list, headers: dict) -> str:
     response.raise_for_status()
 
     data = response.json()
-    return data["choices"][0]["message"]["content"]
+    raw_text = data["choices"][0]["message"]["content"]
+    usage = data.get("usage", {})
+    return raw_text, usage
 
 # ─── POST /chat ───────────────────────────────────────────────────────────────
 @app.post("/chat")
@@ -235,9 +245,23 @@ async def chat(request: ChatRequest):
     if not OPENROUTER_API_KEY:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY is not set.")
 
+    # Trim history to last 10 messages (cost control)
+    trimmed_history = trim_history([msg.dict() for msg in request.history])
+
+    # Build messages payload
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for msg in request.history:
-        messages.append({"role": msg.role, "content": msg.content})
+
+    # Inject interview question every 3rd turn in hr/technical/gd mode
+    if request.mode in ["hr", "technical", "gd"] and request.turn_count > 0 and request.turn_count % 3 == 0:
+        injected_q = get_random_question(request.mode)
+        if injected_q:
+            messages.append({
+                "role": "system",
+                "content": f"For this turn, naturally transition the conversation to ask the student this exact question: \"{injected_q}\" — weave it in naturally, don't just bluntly ask it."
+            })
+
+    for msg in trimmed_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": request.message})
 
     headers = {
@@ -247,54 +271,48 @@ async def chat(request: ChatRequest):
         "X-Title": "FluentRound",
     }
 
-    import json
     raw_content = None
-    last_error = None
+    usage = {}
+    model_used = PRIMARY_MODEL
 
-    # ── Try each model in the chain until one works ───────────────────────────
-    for i, model in enumerate(MODEL_CHAIN):
-        is_paid = not model.endswith(":free")
-        tier_label = f"Paid fallback ({model})" if is_paid else f"Free tier {i+1} ({model})"
+    # Try primary → fallback → fail
+    for model in [PRIMARY_MODEL, FALLBACK_MODEL]:
         try:
-            print(f"[FluentRound] Trying {tier_label}...")
-            raw_content = await call_model(model, messages, headers)
-            print(f"[FluentRound] [SUCCESS] with {model}")
-            break  # Got a response — stop trying
-
+            print(f"[FluentRound] Trying {model}...")
+            raw_content, usage = await call_model(model, messages, headers)
+            model_used = model
+            print(f"[FluentRound] ✅ Success with {model}")
+            break
         except ValueError as ve:
-            # rate_limit or unavailable — try next model
-            last_error = str(ve)
-            print(f"[FluentRound] [WARNING] {model} -> {ve}, trying next model...")
+            print(f"[FluentRound] ⚠️  {model} → {ve}, trying fallback...")
             continue
-
         except httpx.HTTPStatusError as exc:
-            last_error = f"HTTP {exc.response.status_code}"
-            print(f"[FluentRound] [WARNING] {model} -> HTTP error {exc.response.status_code}, trying next...")
+            print(f"[FluentRound] ⚠️  {model} → HTTP {exc.response.status_code}, trying fallback...")
             continue
-
         except Exception as exc:
-            last_error = str(exc)
-            print(f"[FluentRound] [WARNING] {model} -> {exc}, trying next...")
+            print(f"[FluentRound] ⚠️  {model} → {exc}, trying fallback...")
             continue
 
-    # All models failed
     if raw_content is None:
-        # If all were rate-limited return 429, else 500
-        if last_error == "rate_limit":
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limit reached on all models. Please wait 30 seconds and try again.",
-            )
-        raise HTTPException(status_code=500, detail=f"All models failed. Last error: {last_error}")
+        raise HTTPException(
+            status_code=500,
+            detail="AI service temporarily unavailable. Please try again in a moment."
+        )
 
-    # ── Clean and parse JSON from LLM response ────────────────────────────────
+    # Cost logging
+    input_tokens  = usage.get("prompt_tokens", 0)
+    output_tokens = usage.get("completion_tokens", 0)
+    estimated_cost = (input_tokens * COST_INPUT_PER_TOKEN) + (output_tokens * COST_OUTPUT_PER_TOKEN)
+    print(f"[COST] Model: {model_used} | Input: {input_tokens} | Output: {output_tokens} | Est: ${estimated_cost:.6f}")
+
+    # Parse JSON
     try:
         cleaned = clean_llm_response(raw_content)
         parsed = json.loads(cleaned)
         return parsed
     except Exception as e:
-        print(f"[FluentRound] Error parsing JSON: {e}")
-        print(f"[FluentRound] Raw content: {raw_content}")
+        print(f"[FluentRound] JSON parse error: {e}")
+        print(f"[FluentRound] Raw: {raw_content}")
         return FALLBACK_RESPONSE
 
 # ─── POST /tts ────────────────────────────────────────────────────────────────
@@ -320,7 +338,24 @@ async def greeting(mode: str = Query(default="casual")):
     variants = GREETINGS.get(time_of_day, GREETINGS["morning"]).get(safe_mode, GREETINGS["morning"]["casual"])
     return {"greeting": random.choice(variants)}
 
+# ─── POST /session/save ───────────────────────────────────────────────────────
+@app.post("/session/save")
+async def session_save(summary: SessionSummaryRequest):
+    try:
+        save_session(summary.dict())
+        return {"status": "saved"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save session: {str(exc)}")
+
+# ─── GET /progress ────────────────────────────────────────────────────────────
+@app.get("/progress")
+async def progress():
+    try:
+        return compute_progress()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load progress: {str(exc)}")
+
 # ─── Health Check ─────────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
-    return {"status": "ok", "app": "FluentRound API", "version": "1.0.0"}
+    return {"status": "ok", "app": "FluentRound API", "version": "2.0.0"}

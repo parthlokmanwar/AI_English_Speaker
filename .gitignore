@@ -51,3 +51,6 @@ htmlcov/
 
 # Render / Deployment
 .render-buildpacks
+
+# Personal session data — DO NOT commit
+session_data.json

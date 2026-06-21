@@ -87,6 +87,8 @@ Or use VS Code Live Server extension for hot reload.
 8. Click **Deploy** — takes 2–3 minutes
 9. Copy your Render URL (e.g. `https://fluentround-backend.onrender.com`)
 
+> ⚠️ **Progress Data on Render Free Tier**: Session progress is stored in `session_data.json` on the server's local disk. Render's free tier has **no persistent disk**, so this file resets every time the service redeploys or restarts. For local development, data persists normally. A future upgrade path is to use Render's persistent disk add-on or a free database like Supabase.
+
 ---
 
 ## 🔗 Connect Frontend to Deployed Backend

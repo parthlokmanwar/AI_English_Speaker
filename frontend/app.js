@@ -1,7 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
-   FluentRound — app.js
+   FluentRound — app.js  v2.0
    Author: Antigravity AI
    Description: Full client-side logic for the FluentRound app.
+                Includes turn_count tracking, progress dashboard,
+                session save, and question injection support.
 ═══════════════════════════════════════════════════════════ */
 
 // ── Backend URL — CHANGE THIS AFTER DEPLOYING TO RENDER ──────────────────────
@@ -10,20 +12,22 @@ const API_BASE_URL = "http://localhost:8000"; // Change to your Render URL after
 // ─────────────────────────────────────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────────────────────────────────────
-let conversationHistory    = []; // [{role, content}, ...]
-let sessionScores          = []; // all non-zero integer scores
+let conversationHistory     = []; // [{role, content}, ...]
+let sessionScores           = []; // all non-zero integer scores
 let sessionVocabSuggestions = []; // all better_words strings
-let sessionGrammarErrors   = []; // all grammar_error strings
-let currentMode            = "";
-let isRecording            = false;
-let isMayaSpeaking         = false;
-let recognition            = null;
-let totalMessages          = 0;   // total user + maya exchanges counted
+let sessionGrammarErrors    = []; // all grammar_error strings
+let currentMode             = "";
+let isRecording             = false;
+let isMayaSpeaking          = false;
+let recognition             = null;
+let totalMessages           = 0;  // total user + maya exchanges
+let turnCount               = 0;  // user turns sent to /chat (incremented after each send)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DOM REFERENCES
 // ─────────────────────────────────────────────────────────────────────────────
 const modeScreen        = document.getElementById("mode-screen");
+const progressScreen    = document.getElementById("progress-screen");
 const chatScreen        = document.getElementById("chat-screen");
 const chatArea          = document.getElementById("chat-area");
 const messageInput      = document.getElementById("message-input");
@@ -45,9 +49,14 @@ const closeDrawerBtn    = document.getElementById("close-drawer-btn");
 const summaryModal      = document.getElementById("summary-modal");
 const closeModalBtn     = document.getElementById("close-modal-btn");
 const newSessionBtn     = document.getElementById("new-session-btn");
+const sessionSavedNote  = document.getElementById("session-saved-note");
 
 // Mode cards
 const modeCards         = document.querySelectorAll(".mode-card");
+
+// Progress screen
+const progressBtn       = document.getElementById("progress-btn");
+const progressBackBtn   = document.getElementById("progress-back-btn");
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TOAST NOTIFICATIONS
@@ -60,7 +69,6 @@ function showToast(message, type = "red") {
   toast.innerHTML = `<span aria-hidden="true">${icon}</span> ${message}`;
   container.appendChild(toast);
 
-  // Auto-dismiss after 4 seconds
   setTimeout(() => {
     toast.classList.add("fade-out");
     toast.addEventListener("animationend", () => toast.remove(), { once: true });
@@ -141,35 +149,30 @@ function hideTypingIndicator() {
 function buildFeedbackHTML(feedback) {
   const { grammar_errors = [], better_words = [], filler_words = [], fluency_tip = "", score = 0 } = feedback;
 
-  // Score class
   let scoreClass = "score-low";
   if (score >= 7) scoreClass = "score-high";
   else if (score >= 5) scoreClass = "score-mid";
 
   const scoreWidth = `${Math.round((score / 10) * 100)}%`;
 
-  // Grammar Errors
   const grammarHTML = grammar_errors.length > 0
     ? `<ul class="feedback-section__list">${grammar_errors.map(e =>
         `<li class="feedback-section__item feedback-section__item--grammar">${escapeHTML(e)}</li>`
       ).join("")}</ul>`
     : `<p class="feedback-all-good">✅ All good!</p>`;
 
-  // Better Words
   const vocabHTML = better_words.length > 0
     ? `<ul class="feedback-section__list">${better_words.map(w =>
         `<li class="feedback-section__item feedback-section__item--vocab">${escapeHTML(w)}</li>`
       ).join("")}</ul>`
     : `<p class="feedback-all-good">✅ All good!</p>`;
 
-  // Filler Words
   const fillerHTML = filler_words.length > 0
     ? `<div class="filler-tags">${filler_words.map(f =>
         `<span class="filler-tag">${escapeHTML(f)}</span>`
       ).join("")}</div>`
     : `<p class="feedback-all-good">✅ None detected!</p>`;
 
-  // Fluency Tip
   const tipHTML = fluency_tip
     ? `<div class="fluency-tip-box">${escapeHTML(fluency_tip)}</div>`
     : `<p class="feedback-all-good">Keep going!</p>`;
@@ -283,7 +286,6 @@ async function startSession(mode) {
     conversationHistory.push({ role: "assistant", content: greetingText });
     totalMessages++;
 
-    // Speak greeting
     await playTTS(greetingText);
   } catch (err) {
     if (err.name === "TypeError" && err.message.includes("fetch")) {
@@ -320,14 +322,17 @@ async function sendMessage() {
         message: text,
         history: conversationHistory.slice(0, -1), // history before current message
         mode: currentMode,
+        turn_count: turnCount,
       }),
     });
 
+    // Increment turn count after each send
+    turnCount++;
+
     hideTypingIndicator();
 
-    // Handle specific error codes
     if (res.status === 429) {
-      showToast("Rate limit hit. Please wait 30 seconds before sending again.", "yellow");
+      showToast("AI service is busy right now. Please wait a moment and try again.", "yellow");
       setControlsEnabled(true);
       return;
     }
@@ -342,15 +347,12 @@ async function sendMessage() {
     const reply    = data.reply    || "Sorry, I didn't catch that. Could you try again?";
     const feedback = data.feedback || {};
 
-    // Add Maya's reply to chat
     addBubble(reply, "maya");
     conversationHistory.push({ role: "assistant", content: reply });
     totalMessages++;
 
-    // Update feedback panels
     updateFeedbackPanels(feedback);
 
-    // Collect session data
     if (feedback.score && feedback.score > 0) {
       sessionScores.push(feedback.score);
     }
@@ -361,12 +363,12 @@ async function sendMessage() {
       sessionGrammarErrors.push(...feedback.grammar_errors);
     }
 
-    // Play TTS — controls re-enabled after audio finishes
     await playTTS(reply);
     setControlsEnabled(true);
 
   } catch (err) {
     hideTypingIndicator();
+    turnCount++; // still increment even on error
     if (err.name === "TypeError" && err.message.includes("fetch")) {
       showToast("Cannot connect to server. Is the backend running?", "red");
     } else {
@@ -382,7 +384,6 @@ async function sendMessage() {
 // ─────────────────────────────────────────────────────────────────────────────
 function setupSpeechRecognition() {
   if (!("SpeechRecognition" in window) && !("webkitSpeechRecognition" in window)) {
-    // Browser doesn't support STT
     micBtn.style.display = "none";
     browserWarning.classList.remove("hidden");
     return;
@@ -405,7 +406,6 @@ function setupSpeechRecognition() {
     isRecording = false;
     micBtn.classList.remove("recording");
     micBtn.setAttribute("aria-label", "Start voice recording");
-    // Auto-send if we captured something
     if (messageInput.value.trim()) {
       sendMessage();
     }
@@ -428,7 +428,6 @@ function setupSpeechRecognition() {
 micBtn.addEventListener("click", () => {
   if (!recognition) return;
 
-  // Don't interrupt Maya speaking
   if (isMayaSpeaking) {
     showToast("Maya is speaking — please wait before recording.", "yellow");
     return;
@@ -475,25 +474,217 @@ modeCards.forEach(card => {
   card.addEventListener("click", () => {
     currentMode = card.dataset.mode;
 
-    // Update badge
     modeBadge.textContent = MODE_LABELS[currentMode] || currentMode;
 
-    // Switch screens
     modeScreen.classList.add("hidden");
     chatScreen.classList.remove("hidden");
 
     // Reset state
-    conversationHistory    = [];
-    sessionScores          = [];
+    conversationHistory     = [];
+    sessionScores           = [];
     sessionVocabSuggestions = [];
-    sessionGrammarErrors   = [];
-    totalMessages          = 0;
-    chatArea.innerHTML     = "";
+    sessionGrammarErrors    = [];
+    totalMessages           = 0;
+    turnCount               = 0;
+    chatArea.innerHTML      = "";
 
-    // Start session
     startSession(currentMode);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PROGRESS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+progressBtn.addEventListener("click", () => {
+  modeScreen.classList.add("hidden");
+  progressScreen.classList.remove("hidden");
+  loadProgressDashboard();
+});
+
+progressBackBtn.addEventListener("click", () => {
+  progressScreen.classList.add("hidden");
+  modeScreen.classList.remove("hidden");
+});
+
+async function loadProgressDashboard() {
+  const loadingEl  = document.getElementById("progress-loading");
+  const emptyEl    = document.getElementById("progress-empty");
+  const contentEl  = document.getElementById("progress-content");
+
+  // Reset state
+  loadingEl.classList.remove("hidden");
+  emptyEl.classList.add("hidden");
+  contentEl.classList.add("hidden");
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/progress`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    loadingEl.classList.add("hidden");
+
+    if (data.total_sessions === 0) {
+      emptyEl.classList.remove("hidden");
+      return;
+    }
+
+    contentEl.classList.remove("hidden");
+
+    // Stats
+    document.getElementById("prog-total-sessions").textContent = data.total_sessions;
+    const trend = data.avg_score_trend || [];
+    const latestScore = trend.length > 0 ? trend[trend.length - 1] : "—";
+    const bestScore   = trend.length > 0 ? Math.max(...trend) : "—";
+    document.getElementById("prog-latest-score").textContent = latestScore;
+    document.getElementById("prog-best-score").textContent   = bestScore;
+
+    // Improvement note
+    document.getElementById("prog-improvement-note").textContent = data.improvement_note || "";
+
+    // Common issue
+    document.getElementById("prog-common-issue").textContent =
+      data.most_common_grammar_issue || "None detected — great job! 🎉";
+
+    // Draw chart
+    if (trend.length > 0) {
+      drawScoreChart(trend);
+    }
+
+    // Recent sessions list (last 5, newest first)
+    renderSessionsList(data.sessions || []);
+
+  } catch (err) {
+    loadingEl.classList.add("hidden");
+    console.error("Failed to load progress:", err);
+    showToast("Could not load progress. Is the backend running?", "red");
+    progressScreen.classList.add("hidden");
+    modeScreen.classList.remove("hidden");
+  }
+}
+
+// ─── Canvas Score Chart ───────────────────────────────────────────────────────
+function drawScoreChart(scores) {
+  const canvas = document.getElementById("score-chart");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  const PAD = { top: 20, right: 30, bottom: 30, left: 40 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const minScore = 0;
+  const maxScore = 10;
+
+  // Grid lines
+  ctx.strokeStyle = "rgba(139, 92, 246, 0.15)";
+  ctx.lineWidth = 1;
+  [0, 2, 4, 6, 8, 10].forEach(val => {
+    const y = PAD.top + chartH - ((val - minScore) / (maxScore - minScore)) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(PAD.left + chartW, y);
+    ctx.stroke();
+
+    // Y labels
+    ctx.fillStyle = "rgba(160, 160, 200, 0.8)";
+    ctx.font = "11px Inter, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(val, PAD.left - 6, y + 4);
+  });
+
+  if (scores.length === 1) {
+    // Single point — draw a dot
+    const x = PAD.left + chartW / 2;
+    const y = PAD.top + chartH - ((scores[0] - minScore) / (maxScore - minScore)) * chartH;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = "#8b5cf6";
+    ctx.fill();
+    return;
+  }
+
+  // Compute point positions
+  const points = scores.map((s, i) => ({
+    x: PAD.left + (i / (scores.length - 1)) * chartW,
+    y: PAD.top + chartH - ((s - minScore) / (maxScore - minScore)) * chartH,
+  }));
+
+  // Gradient fill
+  const gradient = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + chartH);
+  gradient.addColorStop(0, "rgba(139, 92, 246, 0.35)");
+  gradient.addColorStop(1, "rgba(139, 92, 246, 0.02)");
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(points[points.length - 1].x, PAD.top + chartH);
+  ctx.lineTo(points[0].x, PAD.top + chartH);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = "#8b5cf6";
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  // Dots
+  points.forEach((p, i) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#c4b5fd";
+    ctx.fill();
+    ctx.strokeStyle = "#8b5cf6";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Score label above dot
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "bold 11px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(scores[i], p.x, p.y - 10);
+  });
+}
+
+// ─── Sessions List ────────────────────────────────────────────────────────────
+function renderSessionsList(sessions) {
+  const container = document.getElementById("prog-sessions-list");
+  // Show last 5, newest first
+  const recent = [...sessions].reverse().slice(0, 5);
+  if (recent.length === 0) {
+    container.innerHTML = `<p class="text-secondary">No sessions recorded yet.</p>`;
+    return;
+  }
+  container.innerHTML = recent.map(s => {
+    const date = s.date ? new Date(s.date).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+    }) : "—";
+    const modeLabel = { casual: "🗣️ Casual", hr: "💼 HR", technical: "💻 Technical", gd: "🏛️ GD" }[s.mode] || s.mode;
+    const score = s.avg_score != null ? parseFloat(s.avg_score).toFixed(1) : "—";
+    let scoreClass = "score-low";
+    if (parseFloat(score) >= 7) scoreClass = "score-high";
+    else if (parseFloat(score) >= 5) scoreClass = "score-mid";
+
+    return `
+      <div class="session-item">
+        <div class="session-item__meta">
+          <span class="session-item__mode">${modeLabel}</span>
+          <span class="session-item__date">${date}</span>
+        </div>
+        <div class="session-item__score ${scoreClass}">${score}<span class="session-item__denom">/10</span></div>
+      </div>
+    `;
+  }).join("");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MOBILE FEEDBACK DRAWER
@@ -520,7 +711,6 @@ drawerOverlay.addEventListener("click", closeDrawer);
 // ─────────────────────────────────────────────────────────────────────────────
 function computeMostCommonError(errors) {
   if (errors.length === 0) return "None detected — great job! 🎉";
-  // Extract the "wrong phrase" portion before the arrow
   const freq = {};
   errors.forEach(e => {
     const key = e.split("→")[0].trim();
@@ -530,20 +720,17 @@ function computeMostCommonError(errors) {
   return `"${sorted[0][0]}" (${sorted[0][1]}× repeated)`;
 }
 
-function showSessionSummary() {
-  // Calculate stats
+async function showSessionSummary() {
   const avgScore = sessionScores.length > 0
     ? (sessionScores.reduce((a, b) => a + b, 0) / sessionScores.length).toFixed(1)
-    : "—";
+    : "0";
 
   const commonError = computeMostCommonError(sessionGrammarErrors);
-
-  // Top 3 unique vocab suggestions
   const uniqueVocab = [...new Set(sessionVocabSuggestions)].slice(0, 3);
 
   // Populate modal
   document.getElementById("stat-messages").textContent     = totalMessages;
-  document.getElementById("stat-avg-score").textContent    = avgScore;
+  document.getElementById("stat-avg-score").textContent    = avgScore === "0" ? "—" : avgScore;
   document.getElementById("stat-common-error").textContent = commonError;
 
   const vocabList = document.getElementById("stat-vocab-list");
@@ -558,7 +745,7 @@ function showSessionSummary() {
   // Motivational message
   const motivMsg = document.getElementById("motivational-msg");
   const numScore = parseFloat(avgScore);
-  if (isNaN(numScore)) {
+  if (isNaN(numScore) || numScore === 0) {
     motivMsg.textContent = "Great start! Keep practicing daily to see improvement. 🎯";
   } else if (numScore >= 8) {
     motivMsg.textContent = "Excellent session! You're interview-ready. Keep it up! 🌟";
@@ -568,9 +755,35 @@ function showSessionSummary() {
     motivMsg.textContent = "Every session counts! Review the vocabulary suggestions and practice daily. 🎯";
   }
 
+  // Hide saved note initially
+  sessionSavedNote.classList.add("hidden");
+
   // Show modal
   summaryModal.classList.remove("hidden");
   summaryModal.setAttribute("aria-hidden", "false");
+
+  // Save session to backend (fire and forget — don't block the modal)
+  if (sessionScores.length > 0) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/session/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: currentMode,
+          total_messages: totalMessages,
+          avg_score: parseFloat(avgScore),
+          common_grammar_issue: commonError,
+          vocab_suggestions: uniqueVocab,
+          grammar_errors: sessionGrammarErrors,
+        }),
+      });
+      if (res.ok) {
+        sessionSavedNote.classList.remove("hidden");
+      }
+    } catch (err) {
+      console.error("Failed to save session:", err);
+    }
+  }
 }
 
 endSessionBtn.addEventListener("click", showSessionSummary);
@@ -592,7 +805,7 @@ summaryModal.addEventListener("click", (e) => {
   }
 });
 
-// Close modal on Escape key
+// Close modal or drawer on Escape key
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!summaryModal.classList.contains("hidden")) {
@@ -608,6 +821,5 @@ document.addEventListener("keydown", (e) => {
 // ─────────────────────────────────────────────────────────────────────────────
 (function init() {
   setupSpeechRecognition();
-  // Initial state: controls disabled until session starts
   sendBtn.disabled = false;
 })();

@@ -13,7 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from questions import get_random_question
-from storage import save_session, load_sessions, compute_progress
+from storage import save_session, load_sessions
+from analytics import SessionAnalyzer
 
 # ─── Load environment ───────────────────────────────────────────────────────
 load_dotenv()
@@ -354,13 +355,14 @@ async def session_save(summary: SessionSummaryRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to save session: {str(exc)}")
 
-# ─── GET /progress ────────────────────────────────────────────────────────────
-@app.get("/progress")
-async def progress():
+# ─── GET /analytics/dashboard ───────────────────────────────────────────────────
+@app.get("/analytics/dashboard")
+async def analytics_dashboard():
     try:
-        return compute_progress()
+        analyzer = SessionAnalyzer()
+        return analyzer.generate_dashboard_payload()
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load progress: {str(exc)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load analytics: {str(exc)}")
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
 @app.get("/")

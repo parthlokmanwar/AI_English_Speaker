@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -165,14 +166,30 @@
         <!-- Improvement Note -->
         <div id="prog-improvement-note" class="improvement-note" aria-live="polite"></div>
 
-        <!-- Score Chart -->
-        <div class="chart-section">
-          <h3 class="chart-title">Fluency Score Trend</h3>
-          <div class="chart-wrapper">
-            <canvas id="score-chart" width="600" height="220" aria-label="Fluency score line chart" role="img"></canvas>
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+          <!-- Score Trend (Line) -->
+          <div class="chart-section chart-section--full">
+            <h3 class="chart-title">Fluency Score Trend</h3>
+            <div class="chart-wrapper">
+              <canvas id="score-chart" aria-label="Fluency score line chart" role="img"></canvas>
+            </div>
           </div>
-          <div class="chart-labels" aria-hidden="true">
-            <span>Oldest</span><span>Most Recent</span>
+
+          <!-- Skill Radar (Radar) -->
+          <div class="chart-section">
+            <h3 class="chart-title">Overall Skills</h3>
+            <div class="chart-wrapper">
+              <canvas id="skills-chart" aria-label="Skills radar chart" role="img"></canvas>
+            </div>
+          </div>
+
+          <!-- Filler Words (Bar) -->
+          <div class="chart-section">
+            <h3 class="chart-title">Top Filler Words</h3>
+            <div class="chart-wrapper">
+              <canvas id="fillers-chart" aria-label="Filler words bar chart" role="img"></canvas>
+            </div>
           </div>
         </div>
 

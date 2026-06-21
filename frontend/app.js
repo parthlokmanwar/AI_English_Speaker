@@ -595,7 +595,7 @@ async function loadProgressDashboard() {
   contentEl.classList.add("hidden");
 
   try {
-    const res = await fetch(`${API_BASE_URL}/progress`);
+    const res = await fetch(`${API_BASE_URL}/analytics/dashboard`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -610,7 +610,7 @@ async function loadProgressDashboard() {
 
     // Stats
     document.getElementById("prog-total-sessions").textContent = data.total_sessions;
-    const trend = data.avg_score_trend || [];
+    const trend = data.score_trend || [];
     const latestScore = trend.length > 0 ? trend[trend.length - 1] : "—";
     const bestScore   = trend.length > 0 ? Math.max(...trend) : "—";
     document.getElementById("prog-latest-score").textContent = latestScore;
@@ -621,12 +621,10 @@ async function loadProgressDashboard() {
 
     // Common issue
     document.getElementById("prog-common-issue").textContent =
-      data.most_common_grammar_issue || "None detected — great job! 🎉";
+      data.most_common_error || "None detected — great job! 🎉";
 
-    // Draw chart
-    if (trend.length > 0) {
-      drawScoreChart(trend);
-    }
+    // Draw charts
+    renderCharts(data);
 
     // Recent sessions list (last 5, newest first)
     renderSessionsList(data.sessions || []);

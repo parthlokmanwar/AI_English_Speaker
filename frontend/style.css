@@ -1356,12 +1356,31 @@ ul { list-style: none; }
   color: var(--text-primary);
 }
 
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 800px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Chart Section */
 .chart-section {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-section--full {
+  grid-column: 1 / -1;
 }
 
 .chart-title {
@@ -1375,7 +1394,9 @@ ul { list-style: none; }
 
 .chart-wrapper {
   width: 100%;
-  overflow-x: auto;
+  flex: 1;
+  position: relative;
+  min-height: 200px;
 }
 
 .chart-wrapper canvas {
@@ -1384,13 +1405,6 @@ ul { list-style: none; }
   display: block;
 }
 
-.chart-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 0.5rem;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
 
 /* Common Issue Section */
 .progress-issue-section {

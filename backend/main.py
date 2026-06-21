@@ -416,8 +416,9 @@ async def websocket_chat(websocket: WebSocket):
                 "X-Title": "FluentRound",
             }
 
-            buffer = ""
-            current_sentence = ""
+            text_buffer = ""
+            text_sent_to_ui = ""
+            text_sent_to_audio = ""
             feedback_mode = False
             feedback_json_str = ""
             
@@ -444,48 +445,51 @@ async def websocket_chat(websocket: WebSocket):
                         if not token:
                             continue
 
-                        buffer += token
-                        
-                        if not feedback_mode:
-                            if "===FEEDBACK===" in buffer:
+                        if feedback_mode:
+                            feedback_json_str += token
+                        else:
+                            text_buffer += token
+                            
+                            if "===FEEDBACK===" in text_buffer:
                                 feedback_mode = True
-                                parts = buffer.split("===FEEDBACK===")
-                                text_part = parts[0]
+                                parts = text_buffer.split("===FEEDBACK===")
+                                valid_text = parts[0]
                                 feedback_json_str = parts[1] if len(parts) > 1 else ""
                                 
-                                # Send the remaining text before the delimiter
-                                remaining_text = text_part[len(current_sentence):]
-                                if remaining_text.strip():
-                                    await websocket.send_json({"type": "text", "content": remaining_text})
-                                    # TTS for final sentence
+                                # Send remaining text to UI
+                                new_text_to_ui = valid_text[len(text_sent_to_ui):]
+                                if new_text_to_ui:
+                                    await websocket.send_json({"type": "text", "content": new_text_to_ui})
+                                    text_sent_to_ui += new_text_to_ui
+                                    
+                                # Send remaining text to TTS
+                                remaining_unspoken = valid_text[len(text_sent_to_audio):].strip()
+                                if remaining_unspoken:
                                     try:
-                                        communicate = edge_tts.Communicate(remaining_text.strip(), voice="en-IN-NeerjaNeural", rate="+20%", pitch="-5Hz")
-                                        async for audio_chunk in communicate.stream():
-                                            if audio_chunk["type"] == "audio":
-                                                await websocket.send_bytes(audio_chunk["data"])
+                                        audio_bytes = await generate_tts(remaining_unspoken)
+                                        await websocket.send_bytes(audio_bytes)
                                     except Exception as e:
                                         print(f"TTS Error: {e}")
+                                text_sent_to_audio += valid_text[len(text_sent_to_audio):]
                                 continue
-
-                            # Standard streaming text
-                            await websocket.send_json({"type": "text", "content": token})
+                                
+                            # Safe to send to UI if no pending "===" match
+                            pending_ui = text_buffer[len(text_sent_to_ui):]
+                            if "===" not in pending_ui:
+                                await websocket.send_json({"type": "text", "content": pending_ui})
+                                text_sent_to_ui += pending_ui
                             
-                            # Check for sentence ending to stream TTS
-                            current_sentence += token
-                            if re.search(r'[.!?]\s+$', current_sentence) or re.search(r'[.!?]$', current_sentence) and len(current_sentence) > 30:
-                                sent_to_tts = current_sentence.strip()
-                                current_sentence = ""
-                                if sent_to_tts:
-                                    try:
-                                        communicate = edge_tts.Communicate(sent_to_tts, voice="en-IN-NeerjaNeural", rate="+20%", pitch="-5Hz")
-                                        async for audio_chunk in communicate.stream():
-                                            if audio_chunk["type"] == "audio":
-                                                await websocket.send_bytes(audio_chunk["data"])
-                                    except Exception as e:
-                                        print(f"TTS Error: {e}")
-                        else:
-                            # We are in feedback mode, accumulate json string
-                            feedback_json_str += token
+                                # TTS chunking
+                                unspoken = text_buffer[len(text_sent_to_audio):]
+                                if re.search(r'[.!?]\s+$', unspoken) or (re.search(r'[.!?]$', unspoken) and len(unspoken) > 30):
+                                    sent_to_tts = unspoken.strip()
+                                    if sent_to_tts:
+                                        try:
+                                            audio_bytes = await generate_tts(sent_to_tts)
+                                            await websocket.send_bytes(audio_bytes)
+                                        except Exception as e:
+                                            print(f"TTS Error: {e}")
+                                    text_sent_to_audio += unspoken
 
             # We finished streaming. Now parse feedback_json_str
             if feedback_json_str:

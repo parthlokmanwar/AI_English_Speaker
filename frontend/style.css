@@ -577,6 +577,56 @@ ul { list-style: none; }
   border: 1px solid rgba(255, 152, 0, 0.3);
 }
 
+/* Live Transcript Preview (shown while mic is recording) */
+.transcript-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: rgba(108, 99, 255, 0.1);
+  border: 1.5px solid rgba(108, 99, 255, 0.35);
+  border-radius: var(--radius-md);
+  animation: fadeIn 0.25s ease forwards;
+}
+
+.transcript-text {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  flex: 1;
+  line-height: 1.5;
+  font-style: italic;
+  opacity: 0.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.transcript-text:empty::before {
+  content: "Listening...";
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.clear-transcript-btn {
+  flex-shrink: 0;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--error-soft);
+  color: var(--error);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  transition: background var(--transition), box-shadow var(--transition);
+  white-space: nowrap;
+}
+
+.clear-transcript-btn:hover {
+  background: rgba(244, 67, 54, 0.25);
+  box-shadow: 0 0 10px rgba(244, 67, 54, 0.2);
+}
+
 .input-row {
   display: flex;
   align-items: center;

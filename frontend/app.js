@@ -39,6 +39,11 @@ const feedbackContent   = document.getElementById("feedback-content");
 const feedbackDrawerContent = document.getElementById("feedback-drawer-content");
 const browserWarning    = document.getElementById("browser-warning");
 
+// Transcript Preview
+const transcriptPreview = document.getElementById("transcript-preview");
+const transcriptText    = document.getElementById("transcript-text");
+const clearTranscriptBtn= document.getElementById("clear-transcript-btn");
+
 // Mobile drawer
 const feedbackFab       = document.getElementById("feedback-fab");
 const feedbackDrawer    = document.getElementById("feedback-drawer");
@@ -409,8 +414,10 @@ function setupSpeechRecognition() {
         interimTranscript += result[0].transcript;
       }
     }
-    // Show the growing transcript live in the input box
-    messageInput.value = (finalTranscript + interimTranscript).trim();
+    // Show the growing transcript live in the preview box and input box
+    const combined = (finalTranscript + interimTranscript).trim();
+    messageInput.value = combined;
+    transcriptText.textContent = combined;
   };
 
   recognition.onend = () => {
@@ -421,9 +428,11 @@ function setupSpeechRecognition() {
       micBtn.classList.remove("recording");
       micBtn.setAttribute("aria-label", "Start voice recording");
       micBtn.title = "Click to speak";
+      transcriptPreview.classList.add("hidden");
 
       const captured = finalTranscript.trim() || messageInput.value.trim();
       finalTranscript = "";
+      transcriptText.textContent = "";
 
       if (captured) {
         messageInput.value = captured;
@@ -446,6 +455,8 @@ function setupSpeechRecognition() {
     micBtn.classList.remove("recording");
     micBtn.setAttribute("aria-label", "Start voice recording");
     micBtn.title = "Click to speak";
+    transcriptPreview.classList.add("hidden");
+    transcriptText.textContent = "";
     if (event.error === "not-allowed") {
       showToast("Microphone access denied. Please allow mic access in browser settings.", "red");
     } else if (event.error === "no-speech") {
@@ -460,6 +471,8 @@ function setupSpeechRecognition() {
     finalTranscript  = "";
     stoppedByUser    = false;
     messageInput.value = "";
+    transcriptText.textContent = "";
+    transcriptPreview.classList.remove("hidden");
     recognition.start();
   };
 
@@ -489,6 +502,25 @@ micBtn.addEventListener("click", () => {
     // STOP — send whatever was captured
     recognition._stop();
     // isRecording and UI reset happen in onend
+  }
+});
+
+// Clear/Redo Button
+clearTranscriptBtn.addEventListener("click", () => {
+  if (recognition) {
+    // Abort the current recognition to clear pending interim results
+    recognition.abort();
+    // We want to clear and restart
+    messageInput.value = "";
+    transcriptText.textContent = "";
+    // Because we aborted, onerror will fire and reset UI. We need to manually restart it.
+    // However, aborted is ignored in onerror, and onend might fire. 
+    // It's cleaner to just stop, wipe, and start.
+    setTimeout(() => {
+      if (isRecording) {
+        recognition._start();
+      }
+    }, 100);
   }
 });
 

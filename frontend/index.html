@@ -242,6 +242,15 @@
         <div id="browser-warning" class="browser-warning hidden" role="alert" aria-live="assertive">
           ⚠️ Your browser doesn't support voice input. Please use Chrome. Text input is still available.
         </div>
+
+        <!-- Live transcript preview (shown only while mic is recording) -->
+        <div id="transcript-preview" class="transcript-preview hidden" aria-live="polite">
+          <span id="transcript-text" class="transcript-text">Listening...</span>
+          <button id="clear-transcript-btn" class="clear-transcript-btn" title="Clear and say again" aria-label="Clear transcript and say again">
+            🗑️ Redo
+          </button>
+        </div>
+
         <div class="input-row">
           <input
             id="message-input"

@@ -32,6 +32,7 @@ const chatScreen        = document.getElementById("chat-screen");
 const chatArea          = document.getElementById("chat-area");
 const messageInput      = document.getElementById("message-input");
 const micBtn            = document.getElementById("mic-btn");
+const micStatusLabel    = document.getElementById("mic-status-label");
 const sendBtn           = document.getElementById("send-btn");
 const modeBadge         = document.getElementById("mode-badge");
 const endSessionBtn     = document.getElementById("end-session-btn");
@@ -505,6 +506,7 @@ function setupSpeechRecognition() {
       micBtn.classList.remove("recording");
       micBtn.setAttribute("aria-label", "Start voice recording");
       micBtn.title = "Click to speak";
+      if(micStatusLabel) micStatusLabel.textContent = "Tap to speak";
       transcriptPreview.classList.add("hidden");
 
       const captured = finalTranscript.trim() || messageInput.value.trim();
@@ -532,6 +534,7 @@ function setupSpeechRecognition() {
     micBtn.classList.remove("recording");
     micBtn.setAttribute("aria-label", "Start voice recording");
     micBtn.title = "Click to speak";
+    if(micStatusLabel) micStatusLabel.textContent = "Tap to speak";
     transcriptPreview.classList.add("hidden");
     transcriptText.textContent = "";
     if (event.error === "not-allowed") {
@@ -575,6 +578,7 @@ micBtn.addEventListener("click", () => {
     micBtn.classList.add("recording");
     micBtn.setAttribute("aria-label", "Stop and send voice");
     micBtn.title = "Click to stop and send";
+    if(micStatusLabel) micStatusLabel.textContent = "Tap to stop";
   } else {
     // STOP — send whatever was captured
     recognition._stop();

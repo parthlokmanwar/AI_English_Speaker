@@ -627,6 +627,13 @@ ul { list-style: none; }
   box-shadow: 0 0 10px rgba(244, 67, 54, 0.2);
 }
 
+.input-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+}
+
 .input-row {
   display: flex;
   align-items: center;
@@ -636,6 +643,7 @@ ul { list-style: none; }
   border-radius: var(--radius-xl);
   padding: 0.4rem 0.5rem 0.4rem 1.25rem;
   transition: border-color var(--transition), box-shadow var(--transition);
+  flex: 1;
 }
 
 .input-row:focus-within {
@@ -655,36 +663,52 @@ ul { list-style: none; }
 
 .message-input::placeholder { color: var(--text-muted); }
 
-.mic-btn {
-  width: 56px; height: 56px;
+.mic-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.mic-status-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.mic-btn-huge {
+  width: 68px; height: 68px;
   border-radius: 50%;
   background: linear-gradient(135deg, #4f46e5 0%, #6C63FF 100%);
-  border: 2.5px solid rgba(108, 99, 255, 0.6);
-  font-size: 1.5rem;
+  border: 3px solid rgba(108, 99, 255, 0.4);
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 0 18px rgba(108, 99, 255, 0.4), 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 0 20px rgba(108, 99, 255, 0.5), 0 4px 12px rgba(0,0,0,0.3);
   transition: background var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
 }
 
-.mic-btn:hover {
+.mic-btn-huge:hover {
   background: linear-gradient(135deg, #6C63FF 0%, #8b5cf6 100%);
-  border-color: rgba(139, 92, 246, 0.8);
-  box-shadow: 0 0 28px rgba(108, 99, 255, 0.6), 0 4px 16px rgba(0,0,0,0.3);
-  transform: scale(1.06);
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 30px rgba(108, 99, 255, 0.7), 0 6px 16px rgba(0,0,0,0.4);
+  transform: scale(1.08);
 }
 
-.mic-btn.recording {
+.mic-btn-huge.recording {
   background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
-  border-color: rgba(239, 68, 68, 0.8);
+  border-color: rgba(239, 68, 68, 0.6);
   box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
   animation: micPulse 1.0s ease-in-out infinite;
-  transform: scale(1.05);
+  transform: scale(1.08);
 }
 
-.mic-btn:disabled {
+.mic-btn-huge:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   animation: none;
